@@ -93,6 +93,12 @@ rotate_secret() {
     cp "$env_file" "$backup_file"
     chmod 600 "$backup_file"
 
+    # Capture ownership and mode so atomic replacement keeps file accessible
+    local original_uid original_gid original_mode
+    original_uid=$(stat -c "%u" "$env_file")
+    original_gid=$(stat -c "%g" "$env_file")
+    original_mode=$(stat -c "%a" "$env_file")
+
     # Update secret atomically
     local tmp_file
     tmp_file="$(mktemp "${env_file}.tmp.XXXXXX")"
@@ -102,10 +108,19 @@ rotate_secret() {
         {print}
         END {if (updated == 0) print "SECRET=" secret}
     ' "$env_file" > "$tmp_file"
+
+    chmod "$original_mode" "$tmp_file"
+    if [[ $(id -u) -eq 0 ]]; then
+        chown "${original_uid}:${original_gid}" "$tmp_file"
+    fi
+
     mv -f "$tmp_file" "$env_file"
-    
-    # Ensure permissions are still correct
-    chmod 600 "$env_file"
+
+    # Ensure metadata remains correct after replacement
+    chmod "$original_mode" "$env_file"
+    if [[ $(id -u) -eq 0 ]]; then
+        chown "${original_uid}:${original_gid}" "$env_file"
+    fi
     
     log "$LOG_INFO" "Secret rotated successfully"
     echo "$new_secret"
