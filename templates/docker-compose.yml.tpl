@@ -28,7 +28,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "${PORT}"]
+      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/${PORT:-443}'"]
       interval: 30s
       timeout: 10s
       retries: 3

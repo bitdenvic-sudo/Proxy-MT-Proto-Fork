@@ -2,6 +2,21 @@
 
 Все значимые изменения в проекте MTProxy Deploybook.
 
+## [4.1] - 2026-04-14
+
+### Добавлено
+- Команда `repair` в `scripts/mtproxy-cli.sh` для безопасного восстановления `manage.sh` и `docker-compose.yml` без полной переустановки.
+
+### Изменено
+- Основная версия CLI обновлена до `4.1.0`.
+- Генерация `docker-compose.yml` вынесена в функцию `write_compose_file()` для единой логики между `install` и `repair`.
+- Установка Docker переведена на актуальный формат репозитория (`/etc/apt/sources.list.d/docker.sources` + `/etc/apt/keyrings/docker.asc`).
+
+### Исправлено
+- Устранён ложный статус `unhealthy`: healthcheck больше не зависит от `nc`, которого нет в `telegrammessenger/proxy`.
+- `install_watchtower()` сделан идемпотентным: повторные запуски `install` не создают конфликт контейнера `watchtower`.
+- Повторный запуск `install` больше не переустанавливает Docker, если сервис уже установлен и активен.
+
 ## [4.0] - 2026-04-14
 
 ### Добавлено

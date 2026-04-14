@@ -16,6 +16,11 @@ PACKAGE_CACHE_DIR="/var/cache/apt/archives"
 install_docker() {
     log "$LOG_INFO" "Installing Docker Engine..."
     export DEBIAN_FRONTEND=noninteractive
+
+    if check_docker_status; then
+        log "$LOG_INFO" "Docker Engine is already installed and running"
+        return 0
+    fi
     
     # Remove old versions
     for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do 
@@ -24,13 +29,12 @@ install_docker() {
     
     # Create keyrings directory
     install -m 0755 -d /etc/apt/keyrings
-    
-    # Add Docker GPG key
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-        gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
-    
-    # Add Docker repository
+
+    # Add Docker GPG key (current Docker docs format)
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+
+    # Add Docker repository in deb822 format
     local distro_codename
     distro_codename="$(. /etc/os-release && echo "${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}")"
     if [[ -z "$distro_codename" ]]; then
@@ -38,10 +42,16 @@ install_docker() {
         return 1
     fi
 
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-      ${distro_codename} stable" | \
-      tee /etc/apt/sources.list.d/docker.list > /dev/null
+    cat > /etc/apt/sources.list.d/docker.sources << EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: ${distro_codename}
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+
+    rm -f /etc/apt/sources.list.d/docker.list
     
     # Update and install
     apt update

@@ -1,6 +1,6 @@
 # 📘 User Guide: MTProto Proxy Deployment
 
-**Версия 2.0** — Подробное руководство администратора по развёртыванию, настройке и обслуживанию MTProto прокси на Ubuntu 22.04.
+**Версия 4.1** — Подробное руководство администратора по развёртыванию, настройке и обслуживанию MTProto прокси на Ubuntu 22.04.
 
 ## 📋 Оглавление
 
@@ -234,7 +234,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "${PORT:-443}"]
+      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/${PORT:-443}'"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -280,6 +280,7 @@ docker run -d \
 | `./scripts/mtproxy-cli.sh link` | Получить ссылку для подключения |
 | `./scripts/mtproxy-cli.sh rotate` | Ротация секрета с бэкапом |
 | `./scripts/mtproxy-cli.sh logs` | Просмотр логов в реальном времени |
+| `./scripts/mtproxy-cli.sh repair` | Восстановление runtime-файлов без полной переустановки |
 | `./scripts/mtproxy-cli.sh backup` | Бэкап конфигурации |
 | `./scripts/mtproxy-cli.sh uninstall` | Удаление MTProxy |
 | `./scripts/mtproxy-cli.sh --dry-run install` | Предпросмотр установки |
@@ -298,6 +299,9 @@ sudo ./scripts/mtproxy-cli.sh rotate
 
 # Бэкап конфигурации
 ./scripts/mtproxy-cli.sh backup
+
+# Безопасное восстановление после ручных правок/удаления manage.sh
+sudo ./scripts/mtproxy-cli.sh repair
 ```
 
 ---
@@ -362,6 +366,7 @@ docker inspect mtproxy
 | Порт 443 занят | `sudo lsof -i :443` → остановить конфликтующий сервис |
 | Недостаточно RAM | Увеличьте лимит в `.env`: `MEMORY_LIMIT=1G` |
 | Ошибка секрета | Проверьте формат: 32 hex символа |
+| Статус `unhealthy` при рабочем контейнере | Обновите `docker-compose.yml` на healthcheck без `nc` (релиз 4.1) |
 
 ### Telegram не подключается
 
