@@ -31,8 +31,14 @@ log() {
         "$LOG_INFO")  echo -e "${BLUE}[$timestamp] [INFO]${NC} $message" ;;
         "$LOG_WARN")  echo -e "${YELLOW}[$timestamp] [WARN]${NC} $message" ;;
         "$LOG_ERROR") echo -e "${RED}[$timestamp] [ERROR]${NC} $message" ;;
-        "$LOG_DEBUG") [[ "${DEBUG:-0}" == "1" ]] && echo -e "[$timestamp] [DEBUG] $message" ;;
+        "$LOG_DEBUG")
+            if [[ "${DEBUG:-0}" == "1" ]]; then
+                echo -e "[$timestamp] [DEBUG] $message"
+            fi
+            ;;
     esac
+
+    return 0
 }
 
 # Check if running as root

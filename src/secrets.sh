@@ -39,7 +39,7 @@ create_env_file() {
     local port="${2:-443}"
     local secret="${3:-$(generate_mtproxy_secret)}"
     local tag="${4:-$(generate_tag)}"
-    local tls_domain="${5:-www.telegram.org}"
+    local tls_domain="${5:-ok.ru}"
     
     # Ensure directory exists
     mkdir -p "$install_dir"

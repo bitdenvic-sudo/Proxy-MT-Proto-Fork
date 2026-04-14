@@ -1,6 +1,6 @@
 # MTProxy Deploybook 🚀
 
-> **Версия 4.1** — Модульная, безопасная и более идемпотентная система развёртывания MTProto прокси (Telegram) на Ubuntu 22.04
+> **Версия 4.2** — Модульная, безопасная и более идемпотентная система развёртывания MTProto прокси (Telegram) на Ubuntu 22.04
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Ubuntu](https://img.shields.io/badge/OS-Ubuntu%2022.04-orange)](https://ubuntu.com/)
@@ -101,6 +101,7 @@ sudo bash install_mtproxy.sh
 - ✅ Надёжный fallback для получения публичного IPv4 в `get_public_ip()`
 - ✅ Health checks для контейнера
 - ✅ Интеграция с Prometheus через labels
+- ✅ Early approach по умолчанию: закрытый inbound 443 + Cloudflare Tunnel + Observability конфиги
 
 #### 6. Надёжность релиза 4.1
 - ✅ Убран ложный `unhealthy`: healthcheck больше не зависит от `nc` в контейнере
@@ -130,6 +131,8 @@ sudo bash install_mtproxy.sh
 | `repair` | Восстановить runtime-файлы без переинициализации секрета |
 | `uninstall` | Удаление MTProxy |
 | `--dry-run` | Предпросмотр без изменений |
+| `--tls-domain` | Домен для FakeTLS-маскировки (по умолчанию `ok.ru`) |
+| `--legacy-edge` | Открыть inbound порт прокси (старый режим, без Tunnel-first подхода) |
 
 ### Примеры использования
 
@@ -139,6 +142,9 @@ sudo ./scripts/mtproxy-cli.sh install --port 8443
 
 # Установка с кастомным секретом
 sudo ./scripts/mtproxy-cli.sh install --secret abcdef0123456789abcdef0123456789
+
+# Установка с кастомным FakeTLS доменом
+sudo ./scripts/mtproxy-cli.sh install --tls-domain assets.example.com
 
 # Ротация секрета
 cd /opt/mtproto-proxy && ./manage.sh rotate
