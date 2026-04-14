@@ -33,7 +33,7 @@ configure_ufw() {
     ufw allow "$proxy_port"/tcp comment "MTProto Proxy"
     
     # Enable UFW (non-interactive)
-    echo "y" | ufw enable
+    ufw --force enable
     
     # Show status
     ufw status verbose
