@@ -108,16 +108,49 @@ parse_args() {
     done
 }
 
+# Repair stale Docker apt source entries that use Ubuntu version numbers instead of codenames
+repair_docker_apt_source() {
+    local docker_list="/etc/apt/sources.list.d/docker.list"
+
+    if [[ ! -f "$docker_list" ]]; then
+        return 0
+    fi
+
+    local codename
+    codename="$(. /etc/os-release && echo "${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}")"
+    if [[ -z "$codename" ]]; then
+        return 0
+    fi
+
+    if grep -Eq 'download\.docker\.com/linux/ubuntu[[:space:]]+[0-9]' "$docker_list"; then
+        sed -Ei "s#(download\.docker\.com/linux/ubuntu[[:space:]]+)[^[:space:]]+#\1${codename}#" "$docker_list"
+        log "$LOG_WARN" "Fixed Docker apt source distribution to '${codename}' in ${docker_list}"
+    fi
+}
+
 # System update and package installation
 update_system() {
     log "$LOG_INFO" "Updating system packages..."
-    
+
     if [[ "$DRY_RUN" == "true" ]]; then
         log "$LOG_INFO" "[DRY RUN] Would run: apt update && apt upgrade -y"
         return 0
     fi
-    
-    apt update
+
+    repair_docker_apt_source
+
+    if ! apt update; then
+        local docker_list="/etc/apt/sources.list.d/docker.list"
+        if [[ -f "$docker_list" ]] && grep -q 'download.docker.com/linux/ubuntu' "$docker_list"; then
+            local disabled_file="${docker_list}.disabled.$(date +%Y%m%d_%H%M%S)"
+            mv "$docker_list" "$disabled_file"
+            log "$LOG_WARN" "Temporarily disabled broken Docker apt source: ${disabled_file}"
+            apt update
+        else
+            return 1
+        fi
+    fi
+
     apt upgrade -y
     apt install -y curl wget git ufw fail2ban openssl xxd jq apache2-utils
 }

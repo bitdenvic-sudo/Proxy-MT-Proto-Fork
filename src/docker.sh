@@ -30,9 +30,16 @@ install_docker() {
     chmod a+r /etc/apt/keyrings/docker.gpg
     
     # Add Docker repository
+    local distro_codename
+    distro_codename="$(. /etc/os-release && echo "${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}")"
+    if [[ -z "$distro_codename" ]]; then
+        log "$LOG_ERROR" "Unable to detect Ubuntu codename for Docker repository"
+        return 1
+    fi
+
     echo \
       "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      ${distro_codename} stable" | \
       tee /etc/apt/sources.list.d/docker.list > /dev/null
     
     # Update and install
