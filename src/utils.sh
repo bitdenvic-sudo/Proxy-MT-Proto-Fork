@@ -104,7 +104,7 @@ generate_hex_secret() {
 # Generate random alphanumeric string
 generate_random_string() {
     local length="${1:-32}"
-    tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c "$length"
+    LC_ALL=C tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c "$length" || true
 }
 
 # Securely create file with restricted permissions
@@ -112,9 +112,13 @@ create_secure_file() {
     local file="$1"
     local content="$2"
     local mode="${3:-600}"
-    
-    echo "$content" > "$file"
-    chmod "$mode" "$file"
+
+    umask 077
+    local tmp_file
+    tmp_file="$(mktemp "${file}.tmp.XXXXXX")"
+    printf '%s\n' "$content" > "$tmp_file"
+    chmod "$mode" "$tmp_file"
+    mv -f "$tmp_file" "$file"
 }
 
 # Check if command exists

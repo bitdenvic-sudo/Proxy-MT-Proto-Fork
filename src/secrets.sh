@@ -13,6 +13,14 @@ source "${SCRIPT_DIR}/utils.sh"
 SECRETS_DIR="${SECRETS_DIR:-/opt/mtproto-proxy}"
 ENV_FILE="${SECRETS_DIR}/.env"
 
+# Read variable from .env file safely
+get_env_value() {
+    local env_file="$1"
+    local variable="$2"
+
+    awk -F'=' -v key="$variable" '$1 == key {print $2; exit}' "$env_file" | tr -d '[:space:]'
+}
+
 # Generate MTProto secret (32 hex characters)
 generate_mtproxy_secret() {
     local length="${1:-16}"
@@ -55,7 +63,7 @@ get_secret() {
         return 1
     fi
     
-    grep "^SECRET=" "$env_file" | cut -d'=' -f2 | tr -d '[:space:]'
+    get_env_value "$env_file" "SECRET"
 }
 
 # Read port from env file
@@ -67,7 +75,7 @@ get_port() {
         return 1
     fi
     
-    grep "^PORT=" "$env_file" | cut -d'=' -f2 | tr -d '[:space:]'
+    get_env_value "$env_file" "PORT"
 }
 
 # Rotate secret in env file
@@ -81,11 +89,20 @@ rotate_secret() {
     fi
     
     # Backup old env file
-    cp "$env_file" "${env_file}.backup.$(date +%Y%m%d_%H%M%S)"
-    chmod 600 "${env_file}.backup."*
-    
-    # Update secret
-    sed -i "s/^SECRET=.*/SECRET=${new_secret}/" "$env_file"
+    local backup_file="${env_file}.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$env_file" "$backup_file"
+    chmod 600 "$backup_file"
+
+    # Update secret atomically
+    local tmp_file
+    tmp_file="$(mktemp "${env_file}.tmp.XXXXXX")"
+    awk -v secret="$new_secret" '
+        BEGIN {updated=0}
+        /^SECRET=/ {print "SECRET=" secret; updated=1; next}
+        {print}
+        END {if (updated == 0) print "SECRET=" secret}
+    ' "$env_file" > "$tmp_file"
+    mv -f "$tmp_file" "$env_file"
     
     # Ensure permissions are still correct
     chmod 600 "$env_file"
@@ -199,5 +216,8 @@ validate_env_file() {
         done
     fi
     
-    return $errors
+    if ((errors > 0)); then
+        return 1
+    fi
+    return 0
 }
