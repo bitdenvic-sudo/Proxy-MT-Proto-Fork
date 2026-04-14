@@ -135,10 +135,11 @@ enable_apt_cache() {
 # Get Docker image digest
 get_image_digest() {
     local image="$1"
-    
-    docker inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null || \
-    docker pull "$image" >/dev/null 2>&1 && \
-    docker inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null
+
+    if ! docker inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null; then
+        docker pull "$image" >/dev/null 2>&1
+        docker inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null
+    fi
 }
 
 # Run container with security options
@@ -146,7 +147,6 @@ run_secure_container() {
     local image="$1"
     local name="$2"
     shift 2
-    local extra_args="$@"
     
     docker run -d \
         --name "$name" \
@@ -154,7 +154,7 @@ run_secure_container() {
         --read-only \
         --tmpfs /tmp \
         --cap-drop ALL \
-        $extra_args \
+        "$@" \
         "$image"
     
     log "$LOG_INFO" "Container $name started with security hardening"

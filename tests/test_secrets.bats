@@ -91,6 +91,18 @@ load "${SRC_DIR}/secrets"
     rm -rf "$test_dir"
 }
 
+@test "get_env_value should return empty when variable is missing" {
+    local test_dir="/tmp/test_mtproxy_env_var_$$"
+    mkdir -p "$test_dir"
+    echo "PORT=8443" > "${test_dir}/.env"
+
+    run get_env_value "${test_dir}/.env" "SECRET"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+
+    rm -rf "$test_dir"
+}
+
 @test "rotate_secret should update secret in env file" {
     local test_dir="/tmp/test_mtproxy_rotate_$$"
     mkdir -p "$test_dir"
@@ -109,6 +121,23 @@ load "${SRC_DIR}/secrets"
     # Verify backup was created
     ls "${test_dir}/.env.backup."* >/dev/null 2>&1
     
+    rm -rf "$test_dir"
+}
+
+@test "rotate_secret should append SECRET if missing" {
+    local test_dir="/tmp/test_mtproxy_rotate_missing_$$"
+    mkdir -p "$test_dir"
+
+    cat > "${test_dir}/.env" <<EOF
+PORT=443
+TAG=d00df00d
+EOF
+    chmod 600 "${test_dir}/.env"
+
+    run rotate_secret "${test_dir}/.env" "abcdef0123456789abcdef0123456789"
+    [ "$status" -eq 0 ]
+    grep -q "^SECRET=abcdef0123456789abcdef0123456789$" "${test_dir}/.env"
+
     rm -rf "$test_dir"
 }
 

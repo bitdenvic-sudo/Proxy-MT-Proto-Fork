@@ -58,6 +58,12 @@ load "../src/utils"
     [ ${#output} -eq 32 ]
 }
 
+@test "generate_random_string should handle short output length reliably" {
+    run generate_random_string 1
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ ^[a-zA-Z0-9]$ ]]
+}
+
 @test "create_secure_file should create file with correct permissions" {
     local test_file="/tmp/test_secure_$$"
     run create_secure_file "$test_file" "test content" "600"
@@ -68,6 +74,17 @@ load "../src/utils"
     perms=$(stat -c "%a" "$test_file")
     [ "$perms" = "600" ]
     
+    rm -f "$test_file"
+}
+
+@test "create_secure_file should preserve multiline content" {
+    local test_file="/tmp/test_secure_multiline_$$"
+    local content=$'line1\nline2'
+
+    run create_secure_file "$test_file" "$content" "600"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$test_file")" = "$content" ]
+
     rm -f "$test_file"
 }
 
