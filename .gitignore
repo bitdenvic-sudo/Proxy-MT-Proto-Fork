@@ -1,0 +1,98 @@
+```
+# Environment and configuration
+.env
+.env.local
+*.env.*
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Dependencies and build artifacts
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker and system
+.dockerenv
+Dockerfile*
+docker-compose*
+
+# Shell specific
+.history
+.oh-my-zsh/
+.zshrc.pre-oh-my-zsh
+.bash_profile
+.bashrc
+.profile
+.zsh_history
+.zshrc
+.bash_history
+
+# Backup files
+*~
+*.bak
+*.swp
+*.swo
+
+# Secrets and sensitive data patterns
+secrets/
+secret/
+*.key
+*.pem
+*.crt
+*.cert
+```
