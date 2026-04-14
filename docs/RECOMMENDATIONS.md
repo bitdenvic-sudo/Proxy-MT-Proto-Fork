@@ -64,14 +64,14 @@ scripts/
 | Доступ к .env файлам | chmod 600 | `create_secure_file()` |
 | Небезопасные образы | Digest хэши | `get_image_digest()` в docker.sh |
 | Инъекции команд | Валидация ввода | `validate_ip()`, `validate_port()`, `validate_secret()` |
-| Единая точка отказа IP | Multiple fallbacks | `get_public_ip()` с 5 источниками |
+| Единая точка отказа IP | Multiple fallbacks | `get_public_ip()` с 4 внешними источниками + локальный fallback |
 | Повышение привилегий | Security options | `no-new-privileges:true` в docker-compose |
 
 ### 5. Новые возможности ✅
 
 - **Dry Run режим**: `--dry-run` флаг предпросмотра изменений
 - **Авто-бэкапы**: При ротации секретов создаются backup файлы
-- **IPv6 поддержка**: `get_public_ip()` возвращает IPv4 или IPv6
+- **IPv4 fallback**: `get_public_ip()` надёжно определяет публичный IPv4 с несколькими fallback
 - **Health checks**: Проверка работоспособности контейнера
 - **CLI утилита**: Полноценный менеджер с 12 командами
 

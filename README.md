@@ -90,14 +90,14 @@ sudo bash install_mtproxy.sh
 - ✅ Защита от утечки секретов в логах через `mask_secret()` (показывает `abcd...6789`)
 - ✅ `chmod 600` для .env файлов через `create_secure_file()`
 - ✅ Валидация ввода пользователя: `validate_ip()`, `validate_port()`, `validate_secret()`
-- ✅ **5 источников** определения публичного IP с fallback (ifconfig.me, ifconfig.co, ipinfo.io, icanhazip.com, hostname)
+- ✅ **4 внешних источника** определения публичного IPv4 + локальный fallback (api.ipify.org, ifconfig.me, icanhazip.com, ident.me, hostname -I)
 - ✅ Security options в Docker (`no-new-privileges:true`)
 - ✅ Использование digest-хэшей образов вместо тега latest (опционально)
 
 #### 5. Новые возможности
 - ✅ **Dry Run режим** (`--dry-run`) для предпросмотра установки без изменений
 - ✅ Автоматические бэкапы при ротации секретов
-- ✅ Поддержка IPv6 в `get_public_ip()`
+- ✅ Надёжный fallback для получения публичного IPv4 в `get_public_ip()`
 - ✅ Health checks для контейнера
 - ✅ Интеграция с Prometheus через labels
 
