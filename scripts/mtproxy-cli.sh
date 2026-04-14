@@ -22,7 +22,7 @@ ENV_FILE="${INSTALL_DIR}/.env"
 MANAGE_SCRIPT="${INSTALL_DIR}/manage.sh"
 
 # Version
-VERSION="4.0.0"
+VERSION="4.1.0"
 
 # Runtime state for better error diagnostics
 CURRENT_STEP="startup"
@@ -69,6 +69,7 @@ Commands:
   logs            View container logs
   secrets         Show saved secret, tag and connection links
   report          Generate Markdown report files with runtime data
+  repair          Restore missing runtime files without reinstall
   backup          Backup configuration
   restore         Restore from backup
   uninstall       Remove MTProxy completely
@@ -223,40 +224,21 @@ install_docker_engine() {
         log "$LOG_INFO" "[DRY RUN] Would install Docker Engine"
         return 0
     fi
-    
+
+    if check_docker_status; then
+        log "$LOG_INFO" "Docker is already installed and active; skipping installation"
+        add_user_to_docker_group
+        return 0
+    fi
+
     install_docker
     add_user_to_docker_group
 }
 
-# Generate configuration files
-generate_config() {
-    local port="${PROXY_PORT:-443}"
-    local secret="${CUSTOM_SECRET:-$(generate_mtproxy_secret)}"
-    local tag="$(generate_tag)"
-    local tls_domain="www.telegram.org"
-    
-    # Auto-calculate resource limits
-    local memory_limit
-    local cpu_limit
-    memory_limit=$(calculate_memory_limit)
-    cpu_limit=$(calculate_cpu_limit)
-    
-    log "$LOG_INFO" "Generating configuration..."
-    log "$LOG_DEBUG" "Port: $port, Secret: $(mask_secret "$secret"), Memory: $memory_limit, CPU: $cpu_limit"
-    
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log "$LOG_INFO" "[DRY RUN] Would create directory: $INSTALL_DIR"
-        log "$LOG_INFO" "[DRY RUN] Would create .env and docker-compose.yml"
-        return 0
-    fi
-    
-    mkdir -p "${INSTALL_DIR}"/{config,data}
-    cd "${INSTALL_DIR}"
-    
-    # Create .env file
-    create_env_file "$INSTALL_DIR" "$port" "$secret" "$tag" "$tls_domain"
-    
-    # Create docker-compose.yml
+write_compose_file() {
+    local memory_limit="$1"
+    local cpu_limit="$2"
+
     cat > "${COMPOSE_FILE}" << EOF
 version: "3.9"
 
@@ -288,11 +270,43 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "\${PORT}"]
+      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/\${PORT:-443}'"]
       interval: 30s
       timeout: 10s
       retries: 3
 EOF
+}
+
+# Generate configuration files
+generate_config() {
+    local port="${PROXY_PORT:-443}"
+    local secret="${CUSTOM_SECRET:-$(generate_mtproxy_secret)}"
+    local tag="$(generate_tag)"
+    local tls_domain="www.telegram.org"
+    
+    # Auto-calculate resource limits
+    local memory_limit
+    local cpu_limit
+    memory_limit=$(calculate_memory_limit)
+    cpu_limit=$(calculate_cpu_limit)
+    
+    log "$LOG_INFO" "Generating configuration..."
+    log "$LOG_DEBUG" "Port: $port, Secret: $(mask_secret "$secret"), Memory: $memory_limit, CPU: $cpu_limit"
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "$LOG_INFO" "[DRY RUN] Would create directory: $INSTALL_DIR"
+        log "$LOG_INFO" "[DRY RUN] Would create .env and docker-compose.yml"
+        return 0
+    fi
+    
+    mkdir -p "${INSTALL_DIR}"/{config,data}
+    cd "${INSTALL_DIR}"
+    
+    # Create .env file
+    create_env_file "$INSTALL_DIR" "$port" "$secret" "$tag" "$tls_domain"
+    
+    # Create docker-compose.yml
+    write_compose_file "$memory_limit" "$cpu_limit"
 
     # Set ownership
     local run_user="${SUDO_USER:-$USER}"
@@ -396,17 +410,28 @@ install_watchtower() {
         log "$LOG_INFO" "[DRY RUN] Would install Watchtower"
         return 0
     fi
-    
-    log "$LOG_INFO" "Installing Watchtower for automatic updates..."
-    
+
+    log "$LOG_INFO" "Ensuring Watchtower for automatic updates..."
+
+    if docker ps --format "{{.Names}}" | grep -qx "watchtower"; then
+        log "$LOG_INFO" "Watchtower is already running"
+        return 0
+    fi
+
+    if docker ps -a --format "{{.Names}}" | grep -qx "watchtower"; then
+        docker start watchtower >/dev/null
+        log "$LOG_INFO" "Watchtower container already existed and was started"
+        return 0
+    fi
+
     docker run -d \
       --name watchtower \
       -v /var/run/docker.sock:/var/run/docker.sock \
       containrrr/watchtower \
       --interval 86400 \
       --cleanup \
-      mtproxy
-    
+      mtproxy >/dev/null
+
     log "$LOG_INFO" "Watchtower installed"
 }
 
@@ -529,6 +554,48 @@ cmd_report() {
     tls_domain=$(get_env_value "$ENV_FILE" "TLS_DOMAIN")
 
     generate_markdown_reports "$ip" "$port" "$secret" "$tag" "$tls_domain"
+}
+
+ensure_manage_script() {
+    if [[ -x "${MANAGE_SCRIPT}" ]]; then
+        log "$LOG_INFO" "manage.sh already exists"
+        return 0
+    fi
+
+    log "$LOG_WARN" "manage.sh is missing; recreating"
+    create_manage_script
+}
+
+cmd_repair() {
+    check_root
+
+    mkdir -p "${INSTALL_DIR}"/{config,data}
+
+    if [[ ! -f "${ENV_FILE}" ]]; then
+        log "$LOG_ERROR" "Cannot repair without ${ENV_FILE}. Run 'install' or 'init' first."
+        return 1
+    fi
+
+    if [[ ! -f "${COMPOSE_FILE}" ]]; then
+        local memory_limit cpu_limit
+        memory_limit="$(get_env_value "$ENV_FILE" "MEMORY_LIMIT")"
+        cpu_limit="$(get_env_value "$ENV_FILE" "CPU_LIMIT")"
+
+        [[ -z "$memory_limit" ]] && memory_limit="$(calculate_memory_limit)"
+        [[ -z "$cpu_limit" ]] && cpu_limit="$(calculate_cpu_limit)"
+
+        write_compose_file "$memory_limit" "$cpu_limit"
+        log "$LOG_INFO" "docker-compose.yml recreated from existing environment"
+    fi
+
+    ensure_manage_script
+
+    cd "${INSTALL_DIR}"
+    docker compose up -d
+    install_watchtower
+
+    log "$LOG_INFO" "Repair completed successfully"
+    cmd_status
 }
 
 # Main install command
@@ -677,6 +744,9 @@ main() {
             ;;
         report)
             cmd_report
+            ;;
+        repair)
+            cmd_repair
             ;;
         backup)
             cmd_backup "${@:2}"

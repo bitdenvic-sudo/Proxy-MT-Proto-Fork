@@ -1,6 +1,6 @@
 # MTProxy Deploybook 🚀
 
-> **Версия 2.0** — Модульная, безопасная и оптимизированная система развёртывания MTProto прокси (Telegram) на Ubuntu 22.04
+> **Версия 4.1** — Модульная, безопасная и более идемпотентная система развёртывания MTProto прокси (Telegram) на Ubuntu 22.04
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Ubuntu](https://img.shields.io/badge/OS-Ubuntu%2022.04-orange)](https://ubuntu.com/)
@@ -96,10 +96,17 @@ sudo bash install_mtproxy.sh
 
 #### 5. Новые возможности
 - ✅ **Dry Run режим** (`--dry-run`) для предпросмотра установки без изменений
+- ✅ **Repair режим** (`repair`) для безопасного восстановления `manage.sh`/`docker-compose.yml` без полной переустановки
 - ✅ Автоматические бэкапы при ротации секретов
 - ✅ Надёжный fallback для получения публичного IPv4 в `get_public_ip()`
 - ✅ Health checks для контейнера
 - ✅ Интеграция с Prometheus через labels
+
+#### 6. Надёжность релиза 4.1
+- ✅ Убран ложный `unhealthy`: healthcheck больше не зависит от `nc` в контейнере
+- ✅ `install_watchtower()` стал идемпотентным (повторный install не ломает автообновления)
+- ✅ Установка Docker пропускается, если Docker уже установлен и работает
+- ✅ Репозиторий Docker переведён на deb822 (`docker.sources` + `docker.asc`)
 
 ### Базовые возможности (все версии)
 
@@ -120,6 +127,7 @@ sudo bash install_mtproxy.sh
 | `rotate` | Ротация секрета |
 | `logs` | Просмотр логов |
 | `backup` | Бэкап конфигурации |
+| `repair` | Восстановить runtime-файлы без переинициализации секрета |
 | `uninstall` | Удаление MTProxy |
 | `--dry-run` | Предпросмотр без изменений |
 
