@@ -124,6 +124,26 @@ load "${SRC_DIR}/secrets"
     rm -rf "$test_dir"
 }
 
+@test "rotate_secret should preserve env ownership metadata" {
+    local test_dir="/tmp/test_mtproxy_rotate_owner_$$"
+    mkdir -p "$test_dir"
+
+    echo "SECRET=oldsecret12345678901234567890" > "${test_dir}/.env"
+    chmod 600 "${test_dir}/.env"
+
+    local original_owner
+    original_owner=$(stat -c "%u:%g" "${test_dir}/.env")
+
+    run rotate_secret "${test_dir}/.env" "abcdef0123456789abcdef0123456789"
+    [ "$status" -eq 0 ]
+
+    local rotated_owner
+    rotated_owner=$(stat -c "%u:%g" "${test_dir}/.env")
+    [ "$rotated_owner" = "$original_owner" ]
+
+    rm -rf "$test_dir"
+}
+
 @test "rotate_secret should append SECRET if missing" {
     local test_dir="/tmp/test_mtproxy_rotate_missing_$$"
     mkdir -p "$test_dir"
