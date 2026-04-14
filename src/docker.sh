@@ -15,6 +15,7 @@ PACKAGE_CACHE_DIR="/var/cache/apt/archives"
 # Install Docker Engine
 install_docker() {
     log "$LOG_INFO" "Installing Docker Engine..."
+    export DEBIAN_FRONTEND=noninteractive
     
     # Remove old versions
     for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do 
@@ -26,7 +27,7 @@ install_docker() {
     
     # Add Docker GPG key
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-        gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg
     
     # Add Docker repository

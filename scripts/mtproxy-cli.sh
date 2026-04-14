@@ -22,7 +22,33 @@ ENV_FILE="${INSTALL_DIR}/.env"
 MANAGE_SCRIPT="${INSTALL_DIR}/manage.sh"
 
 # Version
-VERSION="2.0.0"
+VERSION="4.0.0"
+
+# Runtime state for better error diagnostics
+CURRENT_STEP="startup"
+LAST_COMMAND=""
+
+capture_last_command() {
+    LAST_COMMAND="$BASH_COMMAND"
+}
+
+on_error() {
+    local line_no="$1"
+    local exit_code="$2"
+    log "$LOG_ERROR" "Step '${CURRENT_STEP}' failed (line ${line_no}, exit ${exit_code})"
+    if [[ -n "${LAST_COMMAND}" ]]; then
+        log "$LOG_ERROR" "Last command: ${LAST_COMMAND}"
+    fi
+    log "$LOG_WARN" "Troubleshooting: run with --debug and check 'install' logs for the failed step"
+}
+
+run_step() {
+    local step_name="$1"
+    shift
+    CURRENT_STEP="$step_name"
+    log "$LOG_INFO" "[STEP] ${step_name}"
+    "$@"
+}
 
 # Print usage
 print_usage() {
@@ -41,6 +67,8 @@ Commands:
   link            Get connection links
   rotate          Rotate proxy secret
   logs            View container logs
+  secrets         Show saved secret, tag and connection links
+  report          Generate Markdown report files with runtime data
   backup          Backup configuration
   restore         Restore from backup
   uninstall       Remove MTProxy completely
@@ -131,6 +159,7 @@ repair_docker_apt_source() {
 # System update and package installation
 update_system() {
     log "$LOG_INFO" "Updating system packages..."
+    export DEBIAN_FRONTEND=noninteractive
 
     if [[ "$DRY_RUN" == "true" ]]; then
         log "$LOG_INFO" "[DRY RUN] Would run: apt update && apt upgrade -y"
@@ -403,24 +432,121 @@ show_connection_info() {
     echo -e "https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}"
     echo -e "\n🛠 ${GREEN}Management:${NC}"
     echo -e "  cd ${INSTALL_DIR} && ./manage.sh <command>"
+    echo -e "\n🔐 ${GREEN}Saved secret retrieval:${NC}"
+    echo -e "  ${YELLOW}$0 secrets${NC}"
+    echo -e "📝 ${GREEN}Markdown reports:${NC}"
+    echo -e "  ${YELLOW}$0 report${NC}"
     echo -e "${GREEN}==========================================${NC}"
+}
+
+generate_markdown_reports() {
+    local ip="$1"
+    local port="$2"
+    local secret="$3"
+    local tag="$4"
+    local tls_domain="$5"
+    local connection_file="${INSTALL_DIR}/CONNECTION.md"
+    local runbook_file="${INSTALL_DIR}/RUNBOOK.md"
+
+    cat > "$connection_file" << EOF
+# MTProxy Connection Details
+
+- Generated at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+- Server IP: ${ip}
+- Port: ${port}
+- Secret: ${secret}
+- Tag: ${tag}
+- TLS Domain: ${tls_domain}
+
+## Telegram links
+
+- tg://proxy?server=${ip}&port=${port}&secret=${secret}
+- https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}
+EOF
+
+    cat > "$runbook_file" << EOF
+# MTProxy Operations Runbook
+
+## Basic operations
+
+- Start: cd ${INSTALL_DIR} && ./manage.sh start
+- Stop: cd ${INSTALL_DIR} && ./manage.sh stop
+- Status: cd ${INSTALL_DIR} && ./manage.sh status
+- Logs: cd ${INSTALL_DIR} && ./manage.sh logs
+- Rotate secret: cd ${INSTALL_DIR} && ./manage.sh rotate
+
+## CLI shortcuts
+
+- Show secrets: ${0} secrets
+- Rebuild reports: ${0} report
+EOF
+
+    chmod 600 "$connection_file"
+    chmod 644 "$runbook_file"
+
+    log "$LOG_INFO" "Markdown reports created: ${connection_file}, ${runbook_file}"
+}
+
+cmd_secrets() {
+    if [[ ! -f "${ENV_FILE}" ]]; then
+        log "$LOG_ERROR" "Secrets file not found: ${ENV_FILE}"
+        return 1
+    fi
+
+    local ip
+    ip=$(get_public_ip)
+    local secret
+    secret=$(get_secret "$ENV_FILE")
+    local port
+    port=$(get_port "$ENV_FILE")
+    local tag
+    tag=$(get_env_value "$ENV_FILE" "TAG")
+
+    log "$LOG_INFO" "Secrets loaded from ${ENV_FILE}"
+    echo "PORT=${port}"
+    echo "SECRET=${secret}"
+    echo "TAG=${tag}"
+    echo "TLS_DOMAIN=$(get_env_value "$ENV_FILE" "TLS_DOMAIN")"
+    echo ""
+    generate_connection_link "$ip" "$port" "$secret"
+}
+
+cmd_report() {
+    if [[ ! -f "${ENV_FILE}" ]]; then
+        log "$LOG_ERROR" "Secrets file not found: ${ENV_FILE}"
+        return 1
+    fi
+
+    local ip
+    ip=$(get_public_ip)
+    local secret
+    secret=$(get_secret "$ENV_FILE")
+    local port
+    port=$(get_port "$ENV_FILE")
+    local tag
+    tag=$(get_env_value "$ENV_FILE" "TAG")
+    local tls_domain
+    tls_domain=$(get_env_value "$ENV_FILE" "TLS_DOMAIN")
+
+    generate_markdown_reports "$ip" "$port" "$secret" "$tag" "$tls_domain"
 }
 
 # Main install command
 cmd_install() {
     log "$LOG_INFO" "Starting MTProxy installation..."
     
-    check_root
-    
-    update_system
-    create_user
-    setup_firewall
-    install_docker_engine
-    generate_config
-    create_manage_script
-    start_containers
-    install_watchtower
-    show_connection_info
+    run_step "check_root" check_root
+
+    run_step "update_system" update_system
+    run_step "create_user" create_user
+    run_step "setup_firewall" setup_firewall
+    run_step "install_docker_engine" install_docker_engine
+    run_step "generate_config" generate_config
+    run_step "create_manage_script" create_manage_script
+    run_step "start_containers" start_containers
+    run_step "install_watchtower" install_watchtower
+    run_step "show_connection_info" show_connection_info
+    run_step "generate_markdown_reports" cmd_report
 }
 
 # Initialize config only
@@ -512,6 +638,9 @@ cmd_uninstall() {
 
 # Main entry point
 main() {
+    trap capture_last_command DEBUG
+    trap 'on_error ${LINENO} $?' ERR
+
     parse_args "$@"
     
     case "${COMMAND:-}" in
@@ -542,6 +671,12 @@ main() {
             ;;
         logs)
             cmd_logs
+            ;;
+        secrets)
+            cmd_secrets
+            ;;
+        report)
+            cmd_report
             ;;
         backup)
             cmd_backup "${@:2}"
