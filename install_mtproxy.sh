@@ -91,7 +91,7 @@ cat > .env <<EOF
 PORT=443
 SECRET=${SECRET}
 TAG=d00df00d
-TLS_DOMAIN=www.telegram.org
+TLS_DOMAIN=ok.ru
 EOF
 chmod 600 .env
 chown -R $RUN_USER:$RUN_USER ${INSTALL_DIR}

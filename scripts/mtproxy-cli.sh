@@ -22,7 +22,8 @@ ENV_FILE="${INSTALL_DIR}/.env"
 MANAGE_SCRIPT="${INSTALL_DIR}/manage.sh"
 
 # Version
-VERSION="4.1.0"
+VERSION="4.2.0"
+EARLY_APPROACH=true
 
 # Runtime state for better error diagnostics
 CURRENT_STEP="startup"
@@ -81,6 +82,8 @@ Options:
   --debug         Enable debug output
   --port PORT     Set proxy port (default: 443)
   --secret SECRET Use custom secret (hex, 32 chars)
+  --tls-domain D  Set FakeTLS domain (default: ok.ru)
+  --legacy-edge   Enable legacy mode with inbound proxy port exposure
   
 Examples:
   $0 install                    # Full installation
@@ -128,6 +131,14 @@ parse_args() {
             --secret)
                 CUSTOM_SECRET="$2"
                 shift 2
+                ;;
+            --tls-domain)
+                TLS_DOMAIN_OVERRIDE="$2"
+                shift 2
+                ;;
+            --legacy-edge)
+                EARLY_APPROACH=false
+                shift
                 ;;
             *)
                 COMMAND="$1"
@@ -215,7 +226,11 @@ setup_firewall() {
         return 0
     fi
     
-    configure_ufw "$port"
+    if [[ "$EARLY_APPROACH" == "true" ]]; then
+        configure_ufw "$port" "22" "false"
+    else
+        configure_ufw "$port" "22" "true"
+    fi
 }
 
 # Install Docker
@@ -282,7 +297,13 @@ generate_config() {
     local port="${PROXY_PORT:-443}"
     local secret="${CUSTOM_SECRET:-$(generate_mtproxy_secret)}"
     local tag="$(generate_tag)"
-    local tls_domain="www.telegram.org"
+    local tls_domain="${TLS_DOMAIN_OVERRIDE:-ok.ru}"
+    local proxy_hostname="${PROXY_HOSTNAME:-proxy.example.com}"
+
+    if [[ -z "$tls_domain" ]]; then
+        log "$LOG_WARN" "TLS domain is empty, using fallback ok.ru"
+        tls_domain="ok.ru"
+    fi
     
     # Auto-calculate resource limits
     local memory_limit
@@ -304,6 +325,8 @@ generate_config() {
     
     # Create .env file
     create_env_file "$INSTALL_DIR" "$port" "$secret" "$tag" "$tls_domain"
+    echo "PROXY_HOSTNAME=${proxy_hostname}" >> "${ENV_FILE}"
+    echo "EARLY_APPROACH=${EARLY_APPROACH}" >> "${ENV_FILE}"
     
     # Create docker-compose.yml
     write_compose_file "$memory_limit" "$cpu_limit"
@@ -313,6 +336,104 @@ generate_config() {
     chown -R "$run_user":"$run_user" "${INSTALL_DIR}"
     
     log "$LOG_INFO" "Configuration generated successfully"
+}
+
+write_cloudflared_config() {
+    local port="${1:-443}"
+    local proxy_hostname
+    proxy_hostname="$(get_env_value "$ENV_FILE" "PROXY_HOSTNAME")"
+    mkdir -p "${INSTALL_DIR}/cloudflared"
+
+    cat > "${INSTALL_DIR}/cloudflared/config.yml" << EOF
+tunnel: mtproxy-tunnel
+credentials-file: /etc/cloudflared/creds.json
+protocol: quic
+
+ingress:
+  - hostname: ${proxy_hostname}
+    service: tcp://localhost:${port}
+  - service: http_status:404
+EOF
+}
+
+write_monitoring_stack() {
+    mkdir -p "${INSTALL_DIR}/monitoring"
+
+    cat > "${INSTALL_DIR}/monitoring/prometheus.yml" << 'EOF'
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['localhost:8080']
+EOF
+
+    cat > "${INSTALL_DIR}/monitoring/docker-compose.yml" << 'EOF'
+version: "3.9"
+services:
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /:/rootfs:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    restart: unless-stopped
+    network_mode: host
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=ChangeMeSecurePass123!
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  prometheus_data:
+  grafana_data:
+EOF
 }
 
 # Create management script
@@ -404,6 +525,19 @@ start_containers() {
     fi
 }
 
+setup_tunnel_and_observability() {
+    local port="${PROXY_PORT:-443}"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "$LOG_INFO" "[DRY RUN] Would generate cloudflared and monitoring configs"
+        return 0
+    fi
+
+    write_cloudflared_config "$port"
+    write_monitoring_stack
+    log "$LOG_INFO" "Early-approach configs generated in ${INSTALL_DIR}/cloudflared and ${INSTALL_DIR}/monitoring"
+}
+
 # Install Watchtower for auto-updates
 install_watchtower() {
     if [[ "$DRY_RUN" == "true" ]]; then
@@ -439,6 +573,8 @@ install_watchtower() {
 show_connection_info() {
     local ip
     ip=$(get_public_ip)
+    local proxy_hostname
+    proxy_hostname=$(get_env_value "$ENV_FILE" "PROXY_HOSTNAME")
     local secret
     secret=$(get_secret "$ENV_FILE")
     local port
@@ -449,12 +585,21 @@ show_connection_info() {
     echo -e "✅ INSTALLATION COMPLETE!"
     echo -e "==========================================${NC}"
     echo -e "📍 Directory: ${YELLOW}${INSTALL_DIR}${NC}"
-    echo -e "🌍 IP Address: ${BLUE}${ip}${NC}"
+    if [[ "$EARLY_APPROACH" == "true" ]]; then
+        echo -e "🌐 Proxy Hostname: ${BLUE}${proxy_hostname}${NC}"
+    else
+        echo -e "🌍 IP Address: ${BLUE}${ip}${NC}"
+    fi
     echo -e "🔌 Port: ${BLUE}${port}${NC}"
     echo -e "🔑 Secret: ${YELLOW}$(mask_secret "$secret")${NC}"
     echo -e "\n📲 ${GREEN}Connection Links:${NC}"
-    echo -e "tg://proxy?server=${ip}&port=${port}&secret=${secret}"
-    echo -e "https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}"
+    if [[ "$EARLY_APPROACH" == "true" ]]; then
+        echo -e "tg://proxy?server=${proxy_hostname}&port=${port}&secret=${secret}"
+        echo -e "https://t.me/proxy?server=${proxy_hostname}&port=${port}&secret=${secret}"
+    else
+        echo -e "tg://proxy?server=${ip}&port=${port}&secret=${secret}"
+        echo -e "https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}"
+    fi
     echo -e "\n🛠 ${GREEN}Management:${NC}"
     echo -e "  cd ${INSTALL_DIR} && ./manage.sh <command>"
     echo -e "\n🔐 ${GREEN}Saved secret retrieval:${NC}"
@@ -611,7 +756,14 @@ cmd_install() {
     run_step "generate_config" generate_config
     run_step "create_manage_script" create_manage_script
     run_step "start_containers" start_containers
+    run_step "setup_tunnel_and_observability" setup_tunnel_and_observability
     run_step "install_watchtower" install_watchtower
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "$LOG_INFO" "Dry run completed successfully"
+        return 0
+    fi
+
     run_step "show_connection_info" show_connection_info
     run_step "generate_markdown_reports" cmd_report
 }
@@ -653,8 +805,14 @@ cmd_link() {
     secret=$(get_secret "$ENV_FILE")
     local port
     port=$(get_port "$ENV_FILE")
-    
-    generate_connection_link "$ip" "$port" "$secret"
+    local proxy_hostname
+    proxy_hostname=$(get_env_value "$ENV_FILE" "PROXY_HOSTNAME")
+
+    if [[ "$(get_env_value "$ENV_FILE" "EARLY_APPROACH")" == "true" ]]; then
+        generate_connection_link "$proxy_hostname" "$port" "$secret"
+    else
+        generate_connection_link "$ip" "$port" "$secret"
+    fi
 }
 
 # Rotate command

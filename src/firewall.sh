@@ -13,6 +13,7 @@ source "${SCRIPT_DIR}/utils.sh"
 configure_ufw() {
     local proxy_port="${1:-443}"
     local ssh_port="${2:-22}"
+    local expose_proxy_port="${3:-false}"
     
     log "$LOG_INFO" "Configuring UFW firewall..."
     
@@ -29,8 +30,13 @@ configure_ufw() {
     # Allow SSH
     ufw allow "$ssh_port"/tcp comment "SSH Access"
     
-    # Allow MTProxy port
-    ufw allow "$proxy_port"/tcp comment "MTProto Proxy"
+    # Allow MTProxy port only for legacy/public-edge topology.
+    # In tunnel topology MTProxy stays private behind cloudflared.
+    if [[ "$expose_proxy_port" == "true" ]]; then
+        ufw allow "$proxy_port"/tcp comment "MTProto Proxy"
+    else
+        log "$LOG_INFO" "Skipping inbound ${proxy_port}/tcp rule (Tunnel mode enabled)"
+    fi
     
     # Enable UFW (non-interactive)
     ufw --force enable
