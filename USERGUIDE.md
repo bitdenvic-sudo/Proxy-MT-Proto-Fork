@@ -1,4 +1,3 @@
-```markdown
 # 📘 User Guide: MTProto Proxy Deployment
 
 **Версия 2.0** — Подробное руководство администратора по развёртыванию, настройке и обслуживанию MTProto прокси на Ubuntu 22.04.
@@ -32,15 +31,15 @@
 [Docker Container] (mtproxy)
        ⬇️ (Resource Limits: авто-расчёт по RAM/CPU)
 [Host System]
+```
 
 Ключевые компоненты:
 
-    Port 443: Стандартный порт HTTPS. Прокси маскирует свой трафик под посещение сайта www.telegram.org
-    Docker Compose: Оркестрация контейнера с параметрами безопасности
-    Модульная система: 4 bash-модуля (utils.sh, firewall.sh, docker.sh, secrets.sh)
-    CLI утилита: mtproxy-cli.sh с 12 командами управления
-    Bats тесты: 33 модульных теста для валидации компонентов
-```
+- **Port 443**: Стандартный порт HTTPS. Прокси маскирует свой трафик под посещение сайта www.telegram.org
+- **Docker Compose**: Оркестрация контейнера с параметрами безопасности
+- **Модульная система**: 4 bash-модуля (utils.sh, firewall.sh, docker.sh, secrets.sh)
+- **CLI утилита**: mtproxy-cli.sh с 12 командами управления
+- **Bats тесты**: 33 модульных теста для валидации компонентов
 
 ## 🛠 Требования
 
@@ -408,4 +407,3 @@ MIT License. См. корневой файл [LICENSE](LICENSE).
 - **Документация**: [docs/RECOMMENDATIONS.md](docs/RECOMMENDATIONS.md)
 - **Issues**: GitHub Issues репозитория
 - **Roadmap v3.0**: См. раздел "Рекомендации" в документации
-```
