@@ -7,6 +7,50 @@
 
 load "../src/utils"
 
+setup() {
+    ORIGINAL_PATH="$PATH"
+    MOCK_BIN="${BATS_TEST_TMPDIR}/mockbin"
+    mkdir -p "$MOCK_BIN"
+    export PATH="$MOCK_BIN:$PATH"
+}
+
+teardown() {
+    export PATH="$ORIGINAL_PATH"
+    unset MOCK_CURL_RESPONSES_FILE
+    unset MOCK_HOSTNAME_OUTPUT
+}
+
+create_mock_network_tools() {
+    cat > "${MOCK_BIN}/curl" <<'MOCKCURL'
+#!/usr/bin/env bash
+responses_file="${MOCK_CURL_RESPONSES_FILE:-}"
+
+if [[ -n "$responses_file" && -f "$responses_file" ]]; then
+    IFS= read -r next_response < "$responses_file" || true
+
+    if [[ -n "${next_response:-}" ]]; then
+        tail -n +2 "$responses_file" > "${responses_file}.tmp"
+        mv -f "${responses_file}.tmp" "$responses_file"
+        printf '%s' "$next_response"
+    fi
+fi
+
+exit 0
+MOCKCURL
+
+    cat > "${MOCK_BIN}/hostname" <<'MOCKHOSTNAME'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "-I" ]]; then
+    printf '%s\n' "${MOCK_HOSTNAME_OUTPUT:-}"
+    exit 0
+fi
+
+/usr/bin/hostname "$@"
+MOCKHOSTNAME
+
+    chmod +x "${MOCK_BIN}/curl" "${MOCK_BIN}/hostname"
+}
+
 @test "check_root should pass when running as root" {
     skip "Requires root privileges - manual test only"
     run check_root
@@ -16,10 +60,10 @@ load "../src/utils"
 @test "validate_ip should accept valid IPv4 addresses" {
     run validate_ip "192.168.1.1"
     [ "$status" -eq 0 ]
-    
+
     run validate_ip "10.0.0.1"
     [ "$status" -eq 0 ]
-    
+
     run validate_ip "255.255.255.255"
     [ "$status" -eq 0 ]
 }
@@ -27,13 +71,13 @@ load "../src/utils"
 @test "validate_ip should reject invalid IPv4 addresses" {
     run validate_ip "256.1.1.1"
     [ "$status" -eq 1 ]
-    
+
     run validate_ip "192.168.1"
     [ "$status" -eq 1 ]
-    
+
     run validate_ip "invalid"
     [ "$status" -eq 1 ]
-    
+
     run validate_ip ""
     [ "$status" -eq 1 ]
 }
@@ -69,11 +113,11 @@ load "../src/utils"
     run create_secure_file "$test_file" "test content" "600"
     [ "$status" -eq 0 ]
     [ -f "$test_file" ]
-    
+
     local perms
     perms=$(stat -c "%a" "$test_file")
     [ "$perms" = "600" ]
-    
+
     rm -f "$test_file"
 }
 
@@ -91,7 +135,7 @@ load "../src/utils"
 @test "command_exists should detect installed commands" {
     run command_exists "bash"
     [ "$status" -eq 0 ]
-    
+
     run command_exists "ls"
     [ "$status" -eq 0 ]
 }
@@ -104,7 +148,7 @@ load "../src/utils"
 @test "trim should remove leading and trailing whitespace" {
     result=$(trim "  hello world  ")
     [ "$result" = "hello world" ]
-    
+
     result=$(trim "no_spaces")
     [ "$result" = "no_spaces" ]
 }
@@ -139,7 +183,7 @@ load "../src/utils"
     run log "INFO" "Test message"
     [ "$status" -eq 0 ]
     [[ "$output" =~ \[INFO\] ]]
-    
+
     run log "ERROR" "Error message"
     [ "$status" -eq 0 ]
     [[ "$output" =~ \[ERROR\] ]]
@@ -150,11 +194,49 @@ load "../src/utils"
     [ "$status" -eq 1 ]
 }
 
-@test "get_public_ip should return valid IP or fail gracefully" {
-    # This test may fail in isolated environments
+@test "get_public_ip should succeed when first service returns valid IPv4" {
+    create_mock_network_tools
+
+    MOCK_CURL_RESPONSES_FILE="${BATS_TEST_TMPDIR}/curl.responses"
+    printf '203.0.113.10\n' > "$MOCK_CURL_RESPONSES_FILE"
+    export MOCK_CURL_RESPONSES_FILE
+
     run get_public_ip
-    if [ "$status" -eq 0 ]; then
-        [[ "$output" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
-        [[ "$output" =~ : ]] # IPv6
-    fi
+    [ "$status" -eq 0 ]
+    [ "$output" = "203.0.113.10" ]
+}
+
+@test "get_public_ip should skip invalid service responses and use later valid IPv4" {
+    create_mock_network_tools
+
+    MOCK_CURL_RESPONSES_FILE="${BATS_TEST_TMPDIR}/curl.responses"
+    cat > "$MOCK_CURL_RESPONSES_FILE" <<'EOF_RESPONSES'
+not-an-ip
+999.999.999.999
+198.51.100.22
+EOF_RESPONSES
+    export MOCK_CURL_RESPONSES_FILE
+
+    run get_public_ip
+    [ "$status" -eq 0 ]
+    [ "$output" = "198.51.100.22" ]
+}
+
+@test "get_public_ip should use hostname fallback when all services fail" {
+    create_mock_network_tools
+
+    MOCK_CURL_RESPONSES_FILE="${BATS_TEST_TMPDIR}/curl.responses"
+    cat > "$MOCK_CURL_RESPONSES_FILE" <<'EOF_RESPONSES'
+invalid
+
+300.1.1.1
+EOF_RESPONSES
+    export MOCK_CURL_RESPONSES_FILE
+
+    MOCK_HOSTNAME_OUTPUT="192.0.2.55"
+    export MOCK_HOSTNAME_OUTPUT
+
+    run get_public_ip
+    [ "$status" -eq 0 ]
+    [ "$output" = "192.0.2.55" ]
 }

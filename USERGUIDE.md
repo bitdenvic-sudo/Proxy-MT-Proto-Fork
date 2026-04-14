@@ -92,7 +92,7 @@ sudo ./scripts/mtproxy-cli.sh install --memory-limit 1G --cpu-limit 2.0
 ```
 
 ### CLI утилита выведет:
-- ✅ Публичный IP сервера (с fallback на 5 источников)
+- ✅ Публичный IPv4 сервера (4 внешних источника + локальный fallback)
 - ✅ Ссылку для подключения в Telegram
 - ✅ QR-код для быстрого подключения
 - ✅ Инструкцию по управлению
@@ -315,7 +315,7 @@ sudo ./scripts/mtproxy-cli.sh rotate
 | 5 | Маскировка в логах | `mask_secret()` показывает `abcd...ef90` |
 | 6 | Логирование с ротацией | 3 файла × 10MB = 30MB максимум |
 | 7 | Валидация ввода | `validate_ip()`, `validate_port()`, `validate_secret()` |
-| 8 | Fallback для IP | 5 источников: ifconfig.me, ifconfig.co, ipinfo.io, icanhazip.com, hostname |
+| 8 | Fallback для IP | 4 внешних источника: api.ipify.org, ifconfig.me, icanhazip.com, ident.me + `hostname -I` |
 
 ---
 
@@ -368,7 +368,7 @@ docker inspect mtproxy
 ```bash
 sudo ufw status verbose
 nc -zv localhost 443
-curl ifconfig.me || curl ifconfig.co || curl ipinfo.io/ip
+curl api.ipify.org || curl ifconfig.me/ip || curl icanhazip.com || curl ident.me
 ```
 
 ### Ошибка "Secret not found"

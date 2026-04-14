@@ -61,7 +61,7 @@ validate_ip() {
     return 0
 }
 
-# Get public IP with fallback mechanisms
+# Get public IPv4 with fallback mechanisms (external services + local interface)
 get_public_ip() {
     local ip=""
     local services=(
