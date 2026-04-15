@@ -68,6 +68,7 @@ validate_ip() {
 }
 
 # Get public IPv4 with fallback mechanisms (external services + local interface)
+# Note: This function returns IPv4 only. For IPv6 support, use get_public_ip_v6().
 get_public_ip() {
     local ip=""
     local services=(
@@ -80,6 +81,7 @@ get_public_ip() {
     for service in "${services[@]}"; do
         ip=$(curl -s --connect-timeout 5 --max-time 10 "$service" 2>/dev/null | tr -d '[:space:]')
         if [[ -n "$ip" ]] && validate_ip "$ip"; then
+            log "$LOG_DEBUG" "Public IP detected via ${service}: ${ip}"
             echo "$ip"
             return 0
         fi
@@ -88,11 +90,42 @@ get_public_ip() {
     # Fallback: try to get from network interface
     ip=$(hostname -I | awk '{print $1}' 2>/dev/null)
     if validate_ip "$ip"; then
+        log "$LOG_DEBUG" "Public IP from local interface: ${ip}"
         echo "$ip"
         return 0
     fi
     
     log "$LOG_ERROR" "Failed to determine public IP address"
+    return 1
+}
+
+# Get public IPv6 with fallback mechanisms
+get_public_ip_v6() {
+    local ip=""
+    local services=(
+        "https://api6.ipify.org"
+        "https://ifconfig.me/ip6"
+        "https://icanhazip.com"
+    )
+    
+    for service in "${services[@]}"; do
+        ip=$(curl -s -6 --connect-timeout 5 --max-time 10 "$service" 2>/dev/null | tr -d '[:space:]')
+        if [[ -n "$ip" ]]; then
+            log "$LOG_DEBUG" "Public IPv6 detected via ${service}: ${ip}"
+            echo "$ip"
+            return 0
+        fi
+    done
+    
+    # Fallback: try to get from network interface
+    ip=$(hostname -I | awk '{print $2}' 2>/dev/null)
+    if [[ -n "$ip" ]] && [[ "$ip" == *:* ]]; then
+        log "$LOG_DEBUG" "Public IPv6 from local interface: ${ip}"
+        echo "$ip"
+        return 0
+    fi
+    
+    log "$LOG_DEBUG" "Failed to determine public IPv6 address"
     return 1
 }
 
@@ -132,20 +165,31 @@ command_exists() {
     command -v "$1" &>/dev/null
 }
 
-# Wait for condition with timeout
+# Wait for condition with timeout (optimized with exponential backoff)
 wait_for_condition() {
     local condition_cmd="$1"
     local timeout="${2:-30}"
     local interval="${3:-1}"
     local elapsed=0
+    local current_interval="$interval"
     
     while ! eval "$condition_cmd" &>/dev/null; do
         if ((elapsed >= timeout)); then
+            log "$LOG_DEBUG" "Condition check timed out after ${timeout}s"
             return 1
         fi
-        sleep "$interval"
-        ((elapsed += interval))
+        sleep "$current_interval"
+        ((elapsed += current_interval))
+        
+        # Exponential backoff up to 5 seconds
+        if ((current_interval < 5)); then
+            current_interval=$((current_interval * 2))
+        fi
+        if ((elapsed + current_interval > timeout)); then
+            current_interval=$((timeout - elapsed))
+        fi
     done
+    log "$LOG_DEBUG" "Condition met after ${elapsed}s"
     return 0
 }
 
