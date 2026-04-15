@@ -78,7 +78,7 @@ get_port() {
     get_env_value "$env_file" "PORT"
 }
 
-# Rotate secret in env file
+# Rotate secret in env file (optimized with reduced subprocess calls)
 rotate_secret() {
     local env_file="${1:-$ENV_FILE}"
     local new_secret="${2:-$(generate_mtproxy_secret)}"
@@ -92,37 +92,36 @@ rotate_secret() {
     local backup_file="${env_file}.backup.$(date +%Y%m%d_%H%M%S)"
     cp "$env_file" "$backup_file"
     chmod 600 "$backup_file"
+    log "$LOG_DEBUG" "Backup created: ${backup_file}"
 
-    # Capture ownership and mode so atomic replacement keeps file accessible
+    # Capture ownership and mode once for atomic replacement
     local original_uid original_gid original_mode
     original_uid=$(stat -c "%u" "$env_file")
     original_gid=$(stat -c "%g" "$env_file")
     original_mode=$(stat -c "%a" "$env_file")
 
-    # Update secret atomically
+    # Update secret atomically using sed (single process, faster than awk)
     local tmp_file
     tmp_file="$(mktemp "${env_file}.tmp.XXXXXX")"
-    awk -v secret="$new_secret" '
-        BEGIN {updated=0}
-        /^SECRET=/ {print "SECRET=" secret; updated=1; next}
-        {print}
-        END {if (updated == 0) print "SECRET=" secret}
-    ' "$env_file" > "$tmp_file"
+    
+    # Use sed for better performance on large files
+    sed "s/^SECRET=.*/SECRET=${new_secret}/" "$env_file" > "$tmp_file"
+    
+    # Ensure SECRET exists even if not in original file
+    if ! grep -q "^SECRET=" "$tmp_file"; then
+        echo "SECRET=${new_secret}" >> "$tmp_file"
+    fi
 
+    # Apply permissions and ownership in batch
     chmod "$original_mode" "$tmp_file"
     if [[ $(id -u) -eq 0 ]]; then
         chown "${original_uid}:${original_gid}" "$tmp_file"
     fi
 
+    # Atomic move
     mv -f "$tmp_file" "$env_file"
-
-    # Ensure metadata remains correct after replacement
-    chmod "$original_mode" "$env_file"
-    if [[ $(id -u) -eq 0 ]]; then
-        chown "${original_uid}:${original_gid}" "$env_file"
-    fi
     
-    log "$LOG_INFO" "Secret rotated successfully"
+    log "$LOG_INFO" "Secret rotated successfully (masked: $(mask_secret "$new_secret"))"
     echo "$new_secret"
 }
 

@@ -12,25 +12,26 @@ source "${SCRIPT_DIR}/utils.sh"
 # Package cache directory for optimization
 PACKAGE_CACHE_DIR="/var/cache/apt/archives"
 
-# Install Docker Engine
+# Optimized Docker installation with caching and idempotency
 install_docker() {
     log "$LOG_INFO" "Installing Docker Engine..."
     export DEBIAN_FRONTEND=noninteractive
 
+    # Idempotency check: skip if Docker is already running
     if check_docker_status; then
         log "$LOG_INFO" "Docker Engine is already installed and running"
         return 0
     fi
     
-    # Remove old versions
-    for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do 
-        apt-get remove -y "$pkg" 2>/dev/null || true
-    done
+    # Remove old versions (optimized with single apt call)
+    log "$LOG_DEBUG" "Removing old Docker packages..."
+    apt-get remove -y docker.io docker-doc docker-compose podman-docker containerd runc 2>/dev/null || true
     
     # Create keyrings directory
     install -m 0755 -d /etc/apt/keyrings
 
     # Add Docker GPG key (current Docker docs format)
+    log "$LOG_DEBUG" "Adding Docker GPG key..."
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
     chmod a+r /etc/apt/keyrings/docker.asc
 
@@ -42,7 +43,11 @@ install_docker() {
         return 1
     fi
 
-    cat > /etc/apt/sources.list.d/docker.sources << EOF
+    # Only update if repository file changed or doesn't exist
+    local docker_sources="/etc/apt/sources.list.d/docker.sources"
+    if [[ ! -f "$docker_sources" ]] || ! grep -q "${distro_codename}" "$docker_sources"; then
+        log "$LOG_DEBUG" "Creating Docker repository for ${distro_codename}..."
+        cat > "$docker_sources" << EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
 Suites: ${distro_codename}
@@ -50,12 +55,18 @@ Components: stable
 Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
-
-    rm -f /etc/apt/sources.list.d/docker.list
+        rm -f /etc/apt/sources.list.d/docker.list
+        
+        # Update package cache
+        log "$LOG_DEBUG" "Updating apt cache..."
+        apt update -qq
+    else
+        log "$LOG_DEBUG" "Docker repository already configured"
+    fi
     
-    # Update and install
-    apt update
-    apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    # Install Docker packages
+    log "$LOG_DEBUG" "Installing Docker packages..."
+    apt install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     
     log "$LOG_INFO" "Docker installed successfully"
 }

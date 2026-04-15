@@ -2,44 +2,64 @@
 # Logs and temp files
 *.log
 *.tmp
-*.swp
 
-# Environment
+# Environment files
 .env
 .env.local
-.env.
+*.env.*
 
-# Editors
-.vscode/
-.idea/
-
-# Dependencies
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git/modules/
+.DS_Store
+.hg/
+.svn/
+.wafpickle-*
+build/
+.sconsign.dblite
 .venv/
 venv/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.coverage/
+
+# Node.js
 node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+.npm
+.nuxt
+.next
+.cache/
+.output/
 
-# Build artifacts
-dist/
-build/
-target/
-*.pyc
-__pycache__/
+# Docker
+.dockerenv
+Dockerfile*
 
-# System files
+# Shell scripts and system
+*.swp
+*.swo
+*~
 .DS_Store
 Thumbs.db
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Gradle
-.gradle/
-
-# MyPy
-.mypy_cache/
-
-# Pytest
-.pytest_cache/
 ```
