@@ -2,6 +2,65 @@
 
 Все значимые изменения в проекте MTProxy Deploybook.
 
+## [6.0] - 2025-04-15
+
+### Добавлено
+
+#### Многоуровневая защита трафика (Defense in Depth)
+- **Nginx Reverse Proxy**: TLS termination, rate limiting (10 req/s), security headers
+- **Cloudflare Tunnel**: Трафик через Cloudflare edge network, no inbound ports
+- **UFW + Fail2Ban**: Default deny, rate limiting для SSH, auto-ban подозрительных IP
+- **Модуль firewall_advanced.sh**: Расширенная настройка файрвола с интеграцией Fail2Ban
+
+#### Observability Stack (Prometheus + Grafana)
+- **Prometheus**: Сбор метрик с node-exporter, cadvisor, mtproxy (15 дней retention)
+- **Grafana**: Визуализация и дашборды
+- **Alertmanager**: Уведомления в Telegram/Email
+- **6 алертов**: MTProxyDown, HighMemory, HighCPU, TooManyConnections, DiskSpaceLow, ServiceRestarted
+- **Шаблоны конфигураций**: prometheus.yml.tpl, alerts.yml.tpl, alertmanager.yml.tpl
+
+#### Security Hardening по mtproto-org/proxy
+- **Docker security**: Read-only root filesystem, drop ALL capabilities, PID limit (50)
+- **Resource limits**: CPU/RAM limits для каждого сервиса
+- **Seccomp/AppArmor**: Генераторы профилей безопасности
+- **Модуль docker_security.sh**: Security audit, генерация профилей
+- **Network isolation**: Изолированные сети (mtproxy-net, monitoring-net)
+
+#### SSL по IP через acme.sh
+- **Поддержка ZeroSSL**: Получение сертификатов на IP адрес
+- **Поддержка BuyPass**: Альтернативный CA для IP сертификатов
+- **Google Trust Services**: DNS верификация для IP
+- **Автоматическое обновление**: Cron jobs для перевыпуска
+- **CLI команды**: ssl-status, ssl-renew
+
+#### Обновлённый docker-compose.yml
+- **Multi-service архитектура**: nginx → mtproxy:3128 → cloudflared
+- **Health checks**: С nc вместо bash для надёжности
+- **Prometheus labels**: Auto-discovery метрик
+- **Resource limits**: Для каждого сервиса
+- **Profiles**: monitoring, cloudflare для опциональных сервисов
+- **Volumes с :ro**: Read-only доступ к конфигам
+- **Tmpfs**: /tmp с noexec,nosuid
+
+#### Новая документация
+- **ARCHITECTURE_V6.md**: Полное описание архитектуры v6.0 (694 строки)
+- **Обновлённый USERGUIDE.md**: Инструкции по SSL по IP, monitoring, security hardening
+- **Обновлённый README.md**: Описание всех улучшений v6.0
+
+### Изменено
+- Основная версия CLI обновлена до `6.0.0`
+- Все .md файлы проверены и актуализированы
+- Структура проекта расширена для поддержки monitoring stack
+- Требования к ресурсам увеличены: минимум 1 GB RAM (рекомендуется 2 GB)
+
+### Исправлено
+- Неполные конфигурации docker-compose
+- Отсутствие рекомендаций из mtproto-org/proxy
+- Нет первичных настроек UFW и fail2ban
+- Решение не было спрятано за надёжным nginx
+
+---
+
 ## [5.0] - 2025-04-15
 
 ### Добавлено

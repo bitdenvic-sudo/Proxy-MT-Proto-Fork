@@ -1,11 +1,12 @@
 # MTProxy Deploybook 🚀
 
-> **Версия 5.0** — Модульная, безопасная и оптимизированная система развёртывания MTProto прокси (Telegram) на Ubuntu 22.04 с поддержкой IPv6
+> **Версия 6.0** — Enterprise Grade решение с многоуровневой защитой, Nginx reverse proxy, Cloudflare Tunnel и Observability stack
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Ubuntu](https://img.shields.io/badge/OS-Ubuntu%2022.04-orange)](https://ubuntu.com/)
 [![Docker](https://img.shields.io/badge/Engine-Docker-blue)](https://www.docker.com/)
 [![Bats Tests](https://img.shields.io/badge/tests-bats-green)](https://bats-core.readthedocs.io/)
+[![Security Hardened](https://img.shields.io/badge/security-hardened-red)]()
 
 ## ⚡ Быстрый старт
 
@@ -17,26 +18,13 @@ git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
 cd YOUR_REPO
 
 # Запустите установку через CLI (полная функциональность)
-sudo ./scripts/mtproxy-cli.sh install
+sudo ./scripts/mtproxy-cli.sh install --tls-domain your-domain.com
 
 # Или используйте dry-run для предпросмотра
 sudo ./scripts/mtproxy-cli.sh --dry-run install
 ```
 
-### Ручная установка (альтернатива, legacy)
-
-```bash
-# Скачайте скрипт установки
-curl -O https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install_mtproxy.sh
-
-# Дайте права на выполнение
-chmod +x install_mtproxy.sh
-
-# Запустите от имени root
-sudo bash install_mtproxy.sh
-```
-
-После завершения скрипт выдаст вам ссылку вида `tg://proxy?....` Просто нажмите на неё или отправьте в Telegram.
+После установки вы получите ссылки для подключения и доступ к Grafana для мониторинга.
 
 ## 📁 Структура проекта
 
@@ -44,8 +32,10 @@ sudo bash install_mtproxy.sh
 .
 ├── src/                    # Исходный код модулей
 │   ├── utils.sh           # Общие утилиты
-│   ├── firewall.sh        # Настройка UFW
+│   ├── firewall.sh        # Настройка UFW (legacy)
+│   ├── firewall_advanced.sh  # UFW + Fail2Ban (v6.0)
 │   ├── docker.sh          # Docker операции
+│   ├── docker_security.sh # Security hardening (v6.0)
 │   └── secrets.sh         # Управление секретами
 ├── scripts/                # CLI утилиты
 │   └── mtproxy-cli.sh     # Основной CLI
@@ -55,17 +45,119 @@ sudo bash install_mtproxy.sh
 │   └── run_tests.sh       # Runner для тестов
 ├── templates/              # Шаблоны конфигураций
 │   ├── docker-compose.yml.tpl
-│   └── env.tpl
+│   ├── env.tpl
+│   ├── nginx/
+│   │   └── nginx.conf.tpl
+│   ├── cloudflared/
+│   │   └── config.yml.tpl
+│   └── monitoring/
+│       ├── prometheus.yml.tpl
+│       ├── alerts.yml.tpl
+│       └── alertmanager.yml.tpl
 ├── configs/                # Пользовательские конфиги
 ├── docs/                   # Документация
-├── USERGUIDE.md           # Подробное руководство по архитектуре
+│   ├── ARCHITECTURE_V6.md  # Полная архитектура v6.0
+│   ├── CODEBASE_REVIEW_TASKS.md
+│   └── RECOMMENDATIONS.md
+├── USERGUIDE.md           # Подробное руководство
 ├── LICENSE                # Лицензия MIT
 └── README.md              # Этот файл
 ```
 
 ## 🔥 Особенности
 
-### Версия 5.0 - Улучшения (текущая)
+### Версия 6.0 - Критические улучшения (текущая)
+
+#### 1. Многоуровневая защита трафика ✅
+
+**Уровень 1: Nginx Reverse Proxy**
+- Терминирует TLS соединения
+- Rate limiting на уровне HTTP (10 req/s по умолчанию)
+- Скрытие реального порта MTProxy (3128)
+- Дополнительные HTTP заголовки безопасности (X-Frame-Options, CSP, etc.)
+- HTTP/2 поддержка
+
+**Уровень 2: Cloudflare Tunnel**
+- Трафик идёт через Cloudflare edge network
+- Нет открытых inbound портов для внешнего мира
+- DDoS защита от Cloudflare
+- WAF правила для фильтрации атак
+- Бесплатный SSL/TLS
+
+**Уровень 3: UFW + Fail2Ban**
+- Default deny all incoming
+- Rate limiting для SSH (prevent brute force)
+- Автоматическая блокировка подозрительных IP
+- Логирование всех попыток подключения
+- Интеграция с syslog
+
+#### 2. Observability Stack (Prometheus + Grafana) ✅
+
+**Компоненты:**
+- **Node Exporter** - метрики сервера (CPU, RAM, Disk, Network)
+- **cAdvisor** - метрики контейнеров Docker
+- **Prometheus** - сбор и хранение метрик (15 дней retention)
+- **Grafana** - визуализация и дашборды
+- **Alertmanager** - уведомления в Telegram/Email
+
+**Метрики для отслеживания:**
+- Количество активных подключений
+- Потребление CPU/RAM контейнером
+- Сетевой трафик (in/out bytes)
+- Доступность сервиса (uptime)
+- Ошибки аутентификации
+- Перезапуски контейнера
+
+**Алерты:**
+- MTProxyDown - сервис недоступен > 1 мин
+- HighMemoryUsage - потребление RAM > 90%
+- HighCPUUsage - потребление CPU > 80%
+- TooManyConnections - > 1000 активных подключений
+- DiskSpaceLow - свободно < 10% диска
+- ServiceRestarted - множественные перезапуски
+
+#### 3. Security Hardening по mtproto-org/proxy ✅
+
+**Docker security:**
+- Read-only root filesystem
+- Drop ALL capabilities + add только NET_BIND_SERVICE
+- No new privileges
+- PID limit (50 процессов)
+- Memory/CPU limits
+- Health checks с start_period
+- Изолированные сети (mtproxy-net, monitoring-net)
+- Security labels для Prometheus scraping
+
+**System security:**
+- Отдельный пользователь proxyadmin
+- Минимальные права доступа (chmod 600 для секретов)
+- Seccomp profile (опционально)
+- AppArmor profile (опционально)
+- Audit logging через UFW
+
+#### 4. Обновлённые конфигурации ✅
+
+**docker-compose.yml v6.0:**
+- Multi-service архитектура (nginx, mtproxy, cloudflared)
+- Правильные health checks с nc вместо bash
+- Prometheus labels для auto-discovery
+- Resource limits для каждого сервиса
+- Volumes с :ro для read-only доступа
+-Tmpfs для /tmp с noexec,nosuid
+
+**Nginx configuration:**
+- Modern TLS (TLSv1.2/1.3)
+- Rate limiting zones
+- Security headers
+- OCSP Stapling
+- HTTP/2 push
+
+**Cloudflare Tunnel:**
+- QUIC protocol для лучшей производительности
+- Credentials file в secure volume
+- Fallback на 404 для неизвестных hostnames
+
+### Версия 5.0 - Улучшения (legacy)
 
 #### 1. Реконструкция кода ✅
 - ✅ Разделение монолитного скрипта на **4 модуля** (`utils.sh`, `firewall.sh`, `docker.sh`, `secrets.sh`)
